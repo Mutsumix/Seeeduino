@@ -12,12 +12,12 @@ basicConfig(level=INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 CONFIG_PATH = Path(__file__).resolve().parent / "config.yml"
 THINGSPEAK_URL = "https://api.thingspeak.com/update"
-SEND_INTERVAL = 15
 
 DEFAULT_CONFIG = {
     "thingspeak_api_key": None,
     "serial_port": "/dev/ttyUSB0",
     "baud_rate": 115200,
+    "send_interval_minutes": 0.25,
 }
 
 
@@ -29,6 +29,16 @@ def load_config(path: Path) -> dict:
         config = yaml.safe_load(f) or {}
 
     merged = {**DEFAULT_CONFIG, **config}
+
+    try:
+        interval_minutes = float(merged.get("send_interval_minutes", 0))
+    except (TypeError, ValueError):
+        raise ValueError("send_interval_minutes は数値で指定してください。")
+
+    if interval_minutes <= 0:
+        raise ValueError("send_interval_minutes は0より大きい値にしてください。")
+
+    merged["send_interval_minutes"] = interval_minutes
 
     if not merged.get("thingspeak_api_key"):
         raise ValueError("config.yml に thingspeak_api_key を設定してください。")
@@ -94,10 +104,13 @@ def send_data_to_thingspeak(api_key: str, data: dict) -> bool:
 def main():
     config = load_config(CONFIG_PATH)
 
+    send_interval_minutes = config["send_interval_minutes"]
+    send_interval_seconds = send_interval_minutes * 60
+
     logger.info("=" * 60)
     logger.info("センサーデータ → ThingSpeak 送信プログラム")
     logger.info("チャンネル: Seeeduino Sensor Data")
-    logger.info("送信間隔: %s秒", SEND_INTERVAL)
+    logger.info("送信間隔: %.2f分 (%.0f秒)", send_interval_minutes, send_interval_seconds)
     logger.info("=" * 60)
 
     port = config["serial_port"]
@@ -130,7 +143,7 @@ def main():
                     logger.debug("受信: %s", line)
 
             current_time = time.time()
-            if latest_data and (current_time - last_send >= SEND_INTERVAL):
+            if latest_data and (current_time - last_send >= send_interval_seconds):
                 required_fields = [
                     "water_temp",
                     "ec",

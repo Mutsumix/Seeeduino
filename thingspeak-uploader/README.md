@@ -22,6 +22,8 @@ python uploader.py
 thingspeak_api_key: "YOUR_THINGSPEAK_API_KEY"
 serial_port: "/dev/ttyUSB0"
 baud_rate: 115200
+send_interval_minutes: 0.25
 ```
 
-`serial_port` は環境に応じて `/dev/ttyACM0` などへ変更してください。
+- `serial_port`: 環境に応じて `/dev/ttyACM0` などへ変更してください。
+- `send_interval_minutes`: ThingSpeak への送信間隔（分単位）。ThingSpeak の無料プランでは 0.25 分（15 秒）以上に設定してください。
