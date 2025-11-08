@@ -1,4 +1,4 @@
 thingspeak_api_key: "YOUR_THINGSPEAK_API_KEY"
-serial_port: "/dev/ttyUSB0"
+serial_port: "/dev/ttyACM0"
 baud_rate: 115200
 send_interval_minutes: 0.25
