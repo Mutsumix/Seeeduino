@@ -15,7 +15,7 @@ THINGSPEAK_URL = "https://api.thingspeak.com/update"
 
 DEFAULT_CONFIG = {
     "thingspeak_api_key": None,
-    "serial_port": "/dev/ttyUSB0",
+    "serial_port": "/dev/ttyACM0",
     "baud_rate": 115200,
     "send_interval_minutes": 0.25,
 }
@@ -47,52 +47,74 @@ def load_config(path: Path) -> dict:
 
 
 def parse_sensor_data(line: str) -> dict:
+    """
+    現在の出力形式に対応:
+    Temp: 25.0C | Water: 0% | Sound: 45% | Light: 123 lux
+    NAが来た場合はNoneを設定
+    """
     data = {}
 
+    # 温度: "Temp: 25.0C" または "Temp: NA"
     temp_match = re.search(r"Temp: ([\d.]+)C", line)
     if temp_match:
         data["water_temp"] = float(temp_match.group(1))
+    elif "Temp: NA" in line:
+        data["water_temp"] = None
 
-    ec_match = re.search(r"EC: ([\d.]+) uS/cm", line)
-    if ec_match:
-        data["ec"] = float(ec_match.group(1))
-
+    # 水位: "Water: 50%" または "Water: NA"
     water_match = re.search(r"Water: (\d+)%", line)
     if water_match:
         data["water_level"] = int(water_match.group(1))
+    elif "Water: NA" in line:
+        data["water_level"] = None
 
-    sound_match = re.search(r"Sound: ([\d.]+) dB", line)
+    # 音量: "Sound: 45%" または "Sound: NA"
+    sound_match = re.search(r"Sound: (\d+)%", line)
     if sound_match:
-        data["sound"] = float(sound_match.group(1))
+        data["sound"] = int(sound_match.group(1))
+    elif "Sound: NA" in line:
+        data["sound"] = None
 
+    # 照度: "Light: 123 lux" または "Light: NA"
     light_match = re.search(r"Light: (\d+) lux", line)
     if light_match:
         data["light"] = int(light_match.group(1))
+    elif "Light: NA" in line:
+        data["light"] = None
 
     return data
 
 
 def send_data_to_thingspeak(api_key: str, data: dict) -> bool:
-    payload = {
-        "api_key": api_key,
-        "field1": data.get("water_temp"),
-        "field2": data.get("ec"),
-        "field3": data.get("water_level"),
-        "field4": data.get("sound"),
-        "field5": data.get("light"),
-    }
+    """
+    ThingSpeakに送信。Noneの値は送らない
+    Field1: water-temp
+    Field2: water-level
+    Field3: light
+    Field4: sound
+    """
+    payload = {"api_key": api_key}
+    
+    # Noneでない値だけを追加
+    if data.get("water_temp") is not None:
+        payload["field1"] = data["water_temp"]
+    if data.get("water_level") is not None:
+        payload["field2"] = data["water_level"]
+    if data.get("light") is not None:
+        payload["field3"] = data["light"]
+    if data.get("sound") is not None:
+        payload["field4"] = data["sound"]
 
     try:
         response = requests.get(THINGSPEAK_URL, params=payload, timeout=10)
         response.raise_for_status()
 
         logger.info(
-            "ThingSpeakへ送信: Temp=%s°C | EC=%s uS/cm | Water=%s%% | Sound=%s dB | Light=%s lux",
-            data.get("water_temp"),
-            data.get("ec"),
-            data.get("water_level"),
-            data.get("sound"),
-            data.get("light"),
+            "ThingSpeakへ送信: Temp=%s°C | Water=%s%% | Light=%s lux | Sound=%s%%",
+            data.get("water_temp", "NA"),
+            data.get("water_level", "NA"),
+            data.get("light", "NA"),
+            data.get("sound", "NA"),
         )
         return True
 
@@ -144,21 +166,12 @@ def main():
 
             current_time = time.time()
             if latest_data and (current_time - last_send >= send_interval_seconds):
-                required_fields = [
-                    "water_temp",
-                    "ec",
-                    "water_level",
-                    "sound",
-                    "light",
-                ]
-
-                if all(field in latest_data for field in required_fields):
+                # データが1つでもあれば送信（NAでも可）
+                if latest_data:
                     if send_data_to_thingspeak(api_key, latest_data):
                         last_send = current_time
                     else:
                         logger.warning("送信失敗: 次回リトライします")
-                else:
-                    logger.warning("データ不完全: %s", latest_data)
 
             time.sleep(0.5)
 
